@@ -1,22 +1,19 @@
-from __future__ import annotations
-
-import base64
-import logging
-from datetime import datetime, timedelta, timezone
 
 from openai import AsyncOpenAI
+import base64
+from bot.core.config import settings
+from bot.services.limiter import reserve_cost, adjust_cost
+from bot.services.classifier import classify_subject
 
-from bot.models.schemas import SolveResult
-
-logger = logging.getLogger(__name__)
-
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT = '''
 You are a knowledgeable tutor helping a student understand how to solve a problem.
 Your goal is to explain the solution clearly, not just give the answer.
-
 Always respond in Russian.
 
+The student studies in: {country}. Adapt your explanation, notation, and terminology to match the standard educational curriculum of this country.
+
 Response format (always follow this structure):
+
 **Что дано:**
 [briefly restate what is given]
 
@@ -42,124 +39,43 @@ Rules:
 - If you genuinely cannot solve the task, say so honestly
 
 Subject context: {subject}
-Student level: {level}
-"""
+'''
 
-MODEL_PRICES = {
-    'gpt-4o': 0.003,
-    'gpt-4o-mini': 0.0005,
-}
-DEFAULT_LEVEL = 'school'
+async def solve_task(question: str, country: str, file_path: str = None) -> tuple[str, str, int, float]:
+    estimated_cost = 0.03
+    if not await reserve_cost(estimated_cost):
+        return "Сервис временно недоступен, попробуй позже", "other", 0, 0.0
 
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    subject = await classify_subject(question)
 
-class LimitExceeded(Exception):
-    pass
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT.format(country=country, subject=subject)}
+    ]
+    model = "gpt-4o"
+    content = []
+    if file_path:
+        with open(file_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+        content.append({"type": "text", "text": question})
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}})
+    else:
+        model = "gpt-4o-mini"
+        content.append({"type": "text", "text": question})
 
+    messages.append({"role": "user", "content": content})
 
-def get_model(input_type: str, subject: str) -> str:
-    if input_type == 'photo':
-        return 'gpt-4o'
-    if subject == 'programming':
-        return 'gpt-4o'
-    return 'gpt-4o-mini'
-
-
-def build_prompt(question: str, input_type: str, subject: str) -> str:
-    if input_type == 'photo':
-        return f"Реши задачу по фото. Изображение закодировано в base64. Вопрос: {question}"
-    return f"Реши задачу. Вопрос: {question}"
-
-
-async def ensure_spend_limit(redis, cost: float, daily_limit: float) -> None:
-    if cost <= 0:
-        return
-    key = 'daily_spend_usd'
-    current = await redis.get(key)
-    total = float(current or 0.0)
-    if total + cost > daily_limit:
-        raise LimitExceeded('daily spend limit reached')
-    new_total = await redis.incrbyfloat(key, cost)
-    if current is None:
-        ttl = int((datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) - datetime.now(timezone.utc)).total_seconds())
-        await redis.expire(key, ttl)
-    if new_total > daily_limit:
-        raise LimitExceeded('daily spend limit reached')
-
-
-async def solve_text(
-    question: str,
-    subject: str,
-    api_key: str,
-    redis,
-    daily_limit: float,
-) -> SolveResult:
-    model = get_model('text', subject)
-    prompt = build_prompt(question, 'text', subject)
-    client = AsyncOpenAI(api_key=api_key)
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {'role': 'system', 'content': SYSTEM_PROMPT.format(subject=subject, level=DEFAULT_LEVEL)},
-            {'role': 'user', 'content': prompt},
-        ],
-        temperature=0.2,
-    )
-    text = response.choices[0].message.content
-    usage = getattr(response, 'usage', None)
-    tokens = int(getattr(usage, 'total_tokens', 0) or 0)
-    cost = tokens / 1000 * MODEL_PRICES.get(model, 0.0)
-    await ensure_spend_limit(redis, cost, daily_limit)
-    return SolveResult(
-        response=text,
-        subject=subject,
-        input_type='text',
-        tokens_used=tokens,
-        cost_usd=round(cost, 6),
-    )
-
-
-async def solve_photo(
-    image_data: bytes,
-    api_key: str,
-    redis,
-    daily_limit: float,
-) -> SolveResult:
-    model = get_model('photo', 'other')
-    image_base64 = base64.b64encode(image_data).decode('utf-8')
-    client = AsyncOpenAI(api_key=api_key)
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                'role': 'system',
-                'content': SYSTEM_PROMPT.format(subject='other', level=DEFAULT_LEVEL)
-            },
-            {
-                'role': 'user',
-                'content': [
-                    {
-                        'type': 'image_base64',
-                        'media_type': 'image/jpeg',
-                        'image_base64': image_base64,
-                    },
-                    {
-                        'type': 'text',
-                        'text': 'Реши задачу по этому фото.',
-                    }
-                ],
-            }
-        ],
-        temperature=0.2,
-    )
-    text = response.choices[0].message.content
-    usage = getattr(response, 'usage', None)
-    tokens = int(getattr(usage, 'total_tokens', 0) or 0)
-    cost = tokens / 1000 * MODEL_PRICES.get(model, 0.0)
-    await ensure_spend_limit(redis, cost, daily_limit)
-    return SolveResult(
-        response=text,
-        subject='other',
-        input_type='photo',
-        tokens_used=tokens,
-        cost_usd=round(cost, 6),
-    )
+    try:
+        response = await client.chat.completions.create(model=model, messages=messages, max_tokens=2000)
+        answer = response.choices[0].message.content
+        usage = response.usage
+        
+        # Simplified cost calculation
+        cost = (usage.prompt_tokens * 0.000005) + (usage.completion_tokens * 0.000015) # gpt-4o pricing
+        
+        await adjust_cost(cost, estimated_cost)
+        return answer, subject, usage.total_tokens, cost
+    except Exception as e:
+        await adjust_cost(0, estimated_cost)
+        print(f"Error in solver: {e}")
+        return "Извините, произошла ошибка при обработке вашего запроса.", "error", 0, 0.0

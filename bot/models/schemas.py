@@ -1,33 +1,29 @@
-from __future__ import annotations
-
-from datetime import datetime
-from typing import Optional
-
 from pydantic import BaseModel
-
+from typing import Optional
+import datetime
 
 class User(BaseModel):
     user_id: int
-    username: Optional[str]
-    first_name: Optional[str]
-    created_at: datetime
+    username: Optional[str] = None
+    first_name: str
+    country: Optional[str] = None
+    created_at: datetime.datetime
     free_requests_today: int
-    last_reset_date: datetime
+    last_reset_date: datetime.date
     plan: str
     plan_requests_left: int
-    plan_expires_at: Optional[datetime]
+    plan_expires_at: Optional[datetime.datetime] = None
 
-
-class SolveResult(BaseModel):
-    response: str
+class Request(BaseModel):
+    user_id: int
     subject: str
     input_type: str
+    question: str
+    answer: str
     tokens_used: int
     cost_usd: float
 
-
-class PaymentResult(BaseModel):
+class Payment(BaseModel):
     user_id: int
-    plan: str
     stars_amount: int
-    expires_at: Optional[datetime]
+    plan: str

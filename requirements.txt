@@ -1,9 +1,6 @@
-aiogram==3.1.0
-openai>=1.0
-psycopg[binary]>=3.2
-redis>=4.5
-python-dotenv>=1.0
-pydantic-settings>=2.0
-pytest>=8.0
-pytest-asyncio>=0.22
-pytest-mock>=3.0
+aiogram
+pydantic
+pydantic-settings
+asyncpg
+redis
+openai
