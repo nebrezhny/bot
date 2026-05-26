@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+.venv/
+venv/
+__pypackages__/
+.Python
+.pytest_cache/
+.idea/
+.vscode/
+*.db
+*.sqlite
+*.log
+.DS_Store
+build/
+dist/
+*.egg-info/
+
+# local files
+*.local
+
+# docker
+*.env
