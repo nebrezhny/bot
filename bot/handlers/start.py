@@ -1,24 +1,65 @@
-from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
-from bot.core.state import db
+# from bot.core.state import db # <--- УДАЛЯЕМ ЭТУ СТРОКУ
 
 router = Router()
 
-START_TEXT = (
-    'Привет! Я помогу решить любое учебное задание.\n\n'
-    'Просто отправь:\n'
-    '- фото задачи из учебника\n'
-    '- или напиши задачу текстом\n\n'
-    'Поддерживаю: математику, физику, химию, программирование, русский, английский и другие предметы.\n\n'
-    'У тебя 5 бесплатных запросов в день.\n'
-    '/status — посмотреть остаток\n'
-    '/premium — расширить лимит'
-)
+# Определяем состояния (FSM)
+class UserState(StatesGroup):
+    choosing_country = State()
 
+# --- Клавиатуры ---
+def country_selection_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🇷🇺 Россия", callback_data="country_russia")],
+        [InlineKeyboardButton(text="🇰🇿 Казахстан", callback_data="country_kazakhstan")],
+        [InlineKeyboardButton(text="🇺🇦 Украина", callback_data="country_ukraine")],
+        [InlineKeyboardButton(text="🌐 Другая страна", callback_data="country_other")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# --- Тексты сообщений ---
+WELCOME_TEXT = "Добро пожаловать! Выберите вашу страну, чтобы я мог адаптировать ответы."
+COUNTRY_SELECTED_TEXT = "Отлично! Ваша страна сохранена. Теперь вы можете задать мне любой учебный вопрос."
+GREETING_TEXT = "Привет! Чем могу помочь сегодня? Просто отправьте мне задачу."
+
+@router.message(Command('start'))
+async def cmd_start(message: Message, state: FSMContext, db) -> None: # db передается через middleware
+    if db is None:
+        await message.answer('Сервис временно недоступен, попробуйте позже.')
+        return
+
+    user = await db.ensure_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
+
+    # Если страна еще не выбрана, запрашиваем ее
+    if not user.country:
+        await message.answer(WELCOME_TEXT, reply_markup=country_selection_keyboard())
+        await state.set_state(UserState.choosing_country)
+    else:
+        await message.answer(GREETING_TEXT.format(first_name=message.from_user.first_name))
+
+@router.callback_query(StateFilter(UserState.choosing_country))
+async def select_country(callback: CallbackQuery, state: FSMContext, db) -> None: # db передается через middleware
+    if not callback.data or not callback.data.startswith("country_"):
+        await callback.answer("Что-то пошло не так. Попробуйте снова.", show_alert=True)
+        return
+
+    country_code = callback.data.split("_")[1]
+    
+    # Сохраняем страну в базу данных
+    await db.update_user_country(callback.from_user.id, country_code)
+
+    # Отвечаем пользователю и сбрасываем состояние
+    await callback.message.edit_text(COUNTRY_SELECTED_TEXT)
+    await state.clear()
+    await callback.answer() # Закрываем "часики" на кнопке
+
+# Команды /help и /status из старого файла, чтобы ничего не сломать
 HELP_TEXT = (
     'Отправь задачу текстом или фото, и я объясню решение шаг за шагом.\n'
     'Например:\n'
@@ -29,27 +70,14 @@ HELP_TEXT = (
     '/premium — расширить лимит'
 )
 
-
-def premium_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='Премиум', callback_data='premium')],
-    ])
-
-
-@router.message(Command('start'))
-async def cmd_start(message: Message) -> None:
-    await message.answer(START_TEXT)
-
-
 @router.message(Command('help'))
 async def cmd_help(message: Message) -> None:
     await message.answer(HELP_TEXT)
 
-
 @router.message(Command('status'))
-async def cmd_status(message: Message) -> None:
+async def cmd_status(message: Message, db) -> None: # db передается через middleware
     if db is None:
-        await message.answer('Сервис временно недоступен, попробуй позже.')
+        await message.answer('Сервис временно недоступен, попробуйте позже.')
         return
     user = await db.ensure_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     if user.plan == 'free':
@@ -76,3 +104,4 @@ async def cmd_status(message: Message) -> None:
             '/premium — получить больше запросов'
         )
     await message.answer(text)
+

@@ -1,3 +1,4 @@
+
 import asyncio
 import asyncpg
 import redis.asyncio as redis
@@ -5,7 +6,7 @@ from aiogram import Bot, Dispatcher
 
 from bot.core.config import settings
 from bot.core.logging import setup_logging
-from bot.handlers import common, tasks, payments
+from bot.handlers import start, tasks, payments
 from bot.middlewares.db import DbMiddleware
 from bot.middlewares.throttle import ThrottlingMiddleware
 
@@ -23,7 +24,7 @@ async def main():
     dp.message.middleware(ThrottlingMiddleware())
 
     # Routers
-    dp.include_router(common.router)
+    dp.include_router(start.router)
     dp.include_router(tasks.router)
     dp.include_router(payments.router)
 

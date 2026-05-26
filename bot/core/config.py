@@ -4,12 +4,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    bot_token: str
-    openai_api_key: str
-    database_url: str
-    redis_url: str
-    daily_cost_limit_usd: float = 3.0
-    payment_provider_token: str | None = None
+    BOT_TOKEN: str
+    OPENAI_API_KEY: str
+    DATABASE_URL: str
+    REDIS_URL: str
 
     class Config:
         env_file = '.env'
