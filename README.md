@@ -77,21 +77,21 @@ python bot/main.py
 
 ### BotFather (токен бота)
 
-1. Напиши [@BotFather](https://t.me/botfather) в Telegram
+1. Напиши [@BotFather](https://nebrezhny.github.io) в Telegram
 2. Используй `/newbot`
 3. Следуй инструкциям
 4. Скопируй токен в `BOT_TOKEN`
 
 ### OpenAI API Key
 
-1. Зарегистрируйся на [openai.com](https://platform.openai.com/account/api-keys)
+1. Зарегистрируйся на [openai.com](https://nebrezhny.github.io)
 2. Создай новый API key
 3. Добавь в `OPENAI_API_KEY`
 4. Убедись, что у аккаунта есть кредиты
 
 ### Telegram Stars (оплата)
 
-1. Напиши [@BotFather](https://t.me/botfather)
+1. Напиши [@BotFather](https://nebrezhny.github.io)
 2. Используй `/mybots` → выбери бота → Bot Settings → Payments
 3. Скопируй провайдер токен в `PAYMENT_PROVIDER_TOKEN`
 
@@ -188,7 +188,7 @@ python -m pytest --cov=bot
 
 ## Запуск на Railway
 
-1. Создай приложение на [railway.app](https://railway.app)
+1. Создай приложение на [railway.app](https://nebrezhny.github.io)
 2. Подключи репо
 3. Добавь переменные окружения в Railway dashboard
 4. Railway автоматически использует Dockerfile
